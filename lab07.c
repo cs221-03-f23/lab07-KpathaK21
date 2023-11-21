@@ -17,28 +17,23 @@ void handle_signal(int signal) {
   }
 }
 
-int create_socket(const char *port);
-void bind_socket(int sockfd, const char *port);
-void listen_for_connections(int sockfd, const char *port);
+int read_port_from_file();
+
+int create_socket(int port);
+void bind_socket(int sockfd, int port);
+void listen_for_connections(int sockfd, int port);
 int accept_connection(int sockfd);
 void handle_client(int client_socket);
 void print_ipv4_address(struct sockaddr_in *addr);
 
 int main(int argc, char *argv[]) {
-  if (argc != 3 || strcmp(argv[1], "-p") != 0) {
-    fprintf(stderr, "Usage: %s -p <port>\n", argv[0]);
-    exit(EXIT_FAILURE);
-  }
-
-  const char *port = argv[2];
+  int port = read_port_from_file();
 
   int sockfd = create_socket(port);
   bind_socket(sockfd, port);
   listen_for_connections(sockfd, port);
 
-  signal(SIGINT, handle_signal);
-
-  while (!stop_server) {
+  while (1) {
     int client_socket = accept_connection(sockfd);
     handle_client(client_socket);
   }
@@ -48,7 +43,21 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-int create_socket(const char *port) {
+int read_port_from_file() {
+  FILE *file = fopen("port.txt", "r");
+  if (file == NULL) {
+    perror("Error opening port file");
+    exit(EXIT_FAILURE);
+  }
+
+  int port;
+  fscanf(file, "%d", &port);
+  fclose(file);
+
+  return port;
+}
+
+int create_socket(int port) {
   int sockfd = socket(AF_INET, SOCK_STREAM, 0);
   if (sockfd == -1) {
     perror("socket");
@@ -57,11 +66,11 @@ int create_socket(const char *port) {
   return sockfd;
 }
 
-void bind_socket(int sockfd, const char *port) {
+void bind_socket(int sockfd, int port) {
   struct sockaddr_in addr;
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = INADDR_ANY;
-  addr.sin_port = htons(atoi(port));
+  addr.sin_port = htons(port);
 
   if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
     perror("bind");
@@ -70,13 +79,12 @@ void bind_socket(int sockfd, const char *port) {
   }
 }
 
-void listen_for_connections(int sockfd, const char *port) {
+void listen_for_connections(int sockfd, int port) {
   if (listen(sockfd, 3) == -1) {
     perror("listen");
     close(sockfd);
     exit(EXIT_FAILURE);
   }
-  printf("Server listening on port %s...\n", port);
 }
 
 int accept_connection(int sockfd) {
@@ -91,9 +99,7 @@ int accept_connection(int sockfd) {
     exit(EXIT_FAILURE);
   }
 
-  printf("connected to localhost");
-  print_ipv4_address(&client_addr);
-  printf(":%d\n", ntohs(client_addr.sin_port));
+  // printf(":%d\n", ntohs(client_addr.sin_port));
 
   return client_socket;
 }
@@ -109,11 +115,8 @@ void handle_client(int client_socket) {
     exit(EXIT_FAILURE);
   }
 
-  // Display the received message
-  printf(buffer);
-
   // Send a response (PONG for any message)
-  const char *response = "PONG";
+  const char *response = "PONG\n";
   ssize_t send_val = send(client_socket, response, strlen(response), 0);
   if (send_val < 0) {
     perror("send");
