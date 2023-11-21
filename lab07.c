@@ -111,19 +111,24 @@ void handle_client(int client_socket) {
   ssize_t recv_val = recv(client_socket, buffer, MAX_BUFFER_SIZE, 0);
   if (recv_val < 0) {
     perror("recv");
-    close(client_socket);
-    exit(EXIT_FAILURE);
+    // Don't exit immediately; handle cleanup before exiting
+  } else {
+    // Display the received message
+    printf("Received: %s\n", buffer);
+
+    // Check the received message and send an appropriate response
+    const char *response = (strcmp(buffer, "PING") == 0) ? "PONG" : "INVALID";
+    ssize_t send_val = send(client_socket, response, strlen(response), 0);
+    if (send_val < 0) {
+      perror("send");
+      // Don't exit immediately; handle cleanup before exiting
+    }
   }
 
-  // Send a response (PONG for any message)
-  const char *response = "PONG\n";
-  ssize_t send_val = send(client_socket, response, strlen(response), 0);
-  if (send_val < 0) {
-    perror("send");
+  // Close the connection and handle cleanup
+  if (close(client_socket) < 0) {
+    perror("close");
   }
-
-  // Close the connection
-  close(client_socket);
 }
 
 void print_ipv4_address(struct sockaddr_in *addr) {
