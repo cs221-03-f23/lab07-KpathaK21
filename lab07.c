@@ -1,112 +1,84 @@
 #include <netdb.h>
-#include <sys/socket.h>
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#include <signal.h>
 
 #define MAX_BUFFER_SIZE 1024
 
+volatile sig_atomic_t stop_server = 0;
+
+void handle_signal(int signal) {
+    if (signal == SIGINT) {
+        printf("Server shutting down...\n");
+        stop_server = 1;
+    }
+}
 
 
 int create_socket(const char *port);
 void bind_socket(int sockfd, const char *port);
-void listen_for_connections(int sockfd);
+void listen_for_connections(int sockfd, const char *port);
 int accept_connection(int sockfd);
 void handle_client(int client_socket);
 void print_ipv4_address(struct sockaddr_in *addr);
 
-
-int main() {
-
-	struct addrinfo hints;
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_flags = 0;
-	hints.ai_protocol = 0;
-
-	FILE *file = fopen("port.txt", "r");
-	        if (file == NULL) {
-	            perror("Error opening port.txt");
-	            exit(1);
-	        }
-	
-	    char buffer[256];
-	    
-	    if (fgets(buffer, sizeof(buffer), file) == NULL) {
-	            fprintf(stderr, "Error reading from port.txt");
-	            fclose(file);
-	            exit(1);
-	        }
-	      
-	        char *port = fgets(buffer, 256, file);
-	        fclose(file);
-	
-	   
-
-	    struct addrinfo *results;
-	        int e = getaddrinfo("localhost", port, &hints, &results);
-	    
-	        if (e != 0) {
-	            printf("getaddrinfo: %s\n", gai_strerror(e));
-	            exit(-1);
-	        }
-	    
-	        struct addrinfo *r;
-	        int fd;
-
-	    for (r = results; r != NULL; r = r->ai_next) {
-	            fd = socket(r->ai_family, r->ai_socktype, r->ai_protocol);
-	            if (fd == -1)
-	                continue;
-	            if (connect(fd, r->ai_addr, r->ai_addrlen) != -1)
-	                break; // Connected successfully
-	            close(fd);
-	        }
-	    
-	        freeaddrinfo(results);
-	    
-if (r == NULL) {
-        printf("Could not connect\n");
-        exit(-1);
-    }
-
-close(fd);
-
-    return 0;
-}
-
-int create_socket(const char *port) {
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd == -1) {
-        perror("socket");
+int main(int argc, char *argv[]) {
+    if (argc != 3 || strcmp(argv[1], "-p") != 0) {
+        fprintf(stderr, "Usage: %s -p <port>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    return sockfd;
-}
 
-void bind_socket(int sockfd, const char *port) {
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(atoi(port));
+    const char *port = argv[2];
 
-    if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
-        perror("bind");
+    int sockfd = create_socket(port);
+    bind_socket(sockfd, port);
+    listen_for_connections(sockfd, port);
+
+    signal(SIGINT, handle_signal);
+
+        while (!stop_server) {
+            int client_socket = accept_connection(sockfd);
+            handle_client(client_socket);
+        }
+    
         close(sockfd);
-        exit(EXIT_FAILURE);
+    
+        return 0;
     }
-}
 
-void listen_for_connections(int sockfd) {
-    if (listen(sockfd, 3) == -1) {
-        perror("listen");
-        close(sockfd);
-        exit(EXIT_FAILURE);
+    int create_socket(const char *port) {
+        int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd == -1) {
+            perror("socket");
+            exit(EXIT_FAILURE);
+        }
+        return sockfd;
     }
-    printf("Server listening on port %d...\n", ntohs(((struct sockaddr_in){.sin_port = 0}).sin_port));
-}
 
+    void bind_socket(int sockfd, const char *port) {
+        struct sockaddr_in addr;
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY;
+        addr.sin_port = htons(atoi(port));
+    
+        if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+            perror("bind");
+            close(sockfd);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    void listen_for_connections(int sockfd, const char *port) {
+        if (listen(sockfd, 3) == -1) {
+            perror("listen");
+            close(sockfd);
+            exit(EXIT_FAILURE);
+        }
+        printf("Server listening on port %s...\n", port);
+    }
 
     int accept_connection(int sockfd) {
         struct sockaddr_in client_addr;
@@ -119,9 +91,9 @@ void listen_for_connections(int sockfd) {
             exit(EXIT_FAILURE);
         }
     
-        printf("Accepted connection from ");
+        printf("connected to localhost");
         print_ipv4_address(&client_addr);
-        printf(":%d\n", client_addr.sin_port);  // Print the port directly in network byte order
+        printf(":%d\n", ntohs(client_addr.sin_port));
     
         return client_socket;
     }
@@ -136,25 +108,22 @@ void listen_for_connections(int sockfd) {
             close(client_socket);
             exit(EXIT_FAILURE);
         }
+    
+        // Display the received message
+        printf(buffer);
 
-       // Display the received message
-            struct sockaddr_in client_addr;
-            socklen_t client_addrlen = sizeof(client_addr);
-            if (getpeername(client_socket, (struct sockaddr *)&client_addr, &client_addrlen) == 0) {
-                // Extract and print individual bytes of the IPv4 address
-                unsigned char *ip_bytes = (unsigned char *)&(client_addr.sin_addr.s_addr);
-                printf("Received from server: %s\n", buffer);
-                printf("Accepted connection from %u.%u.%u.%u:%d\n",
-                       ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3],
-                       ntohs(client_addr.sin_port));
-            } else {
-                perror("getpeername");
-            }
+    // Send a response (PONG for any message)
+        const char *response = "PONG";
+        ssize_t send_val = send(client_socket, response, strlen(response), 0);
+        if (send_val < 0) {
+            perror("send");
+        }
+    
+        // Close the connection
+        close(client_socket);
+    }
 
-            // Close the connection
-                close(client_socket);
-            }
-void print_ipv4_address(struct sockaddr_in *addr) {
-    unsigned char *ip_bytes = (unsigned char *)&(addr->sin_addr.s_addr);
-    printf("%u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
-}
+    void print_ipv4_address(struct sockaddr_in *addr) {
+        unsigned char *ip_bytes = (unsigned char *)&(addr->sin_addr.s_addr);
+        printf("%u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
+    }
