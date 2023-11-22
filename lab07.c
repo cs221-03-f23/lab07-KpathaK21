@@ -21,9 +21,9 @@ int read_port_from_file();
 
 int create_socket(int port);
 void bind_socket(int sockfd, int port);
-void listen_for_connections(int sockfd, int port);
+void listen_for_connections(int sockfd);
 int accept_connection(int sockfd);
-void handle_client(int client_socket);
+void handle_client(int client_socket, int sockfd);
 void print_ipv4_address(struct sockaddr_in *addr);
 
 int main(int argc, char *argv[]) {
@@ -31,11 +31,11 @@ int main(int argc, char *argv[]) {
 
   int sockfd = create_socket(port);
   bind_socket(sockfd, port);
-  listen_for_connections(sockfd, port);
+  listen_for_connections(sockfd);
 
   while (1) {
     int client_socket = accept_connection(sockfd);
-    handle_client(client_socket);
+    handle_client(client_socket, sockfd);
   }
 
   close(sockfd);
@@ -64,7 +64,7 @@ int create_socket(int port) {
     exit(EXIT_FAILURE);
   }
   return sockfd;
-}
+}      
 
 void bind_socket(int sockfd, int port) {
   struct sockaddr_in addr;
@@ -79,7 +79,8 @@ void bind_socket(int sockfd, int port) {
   }
 }
 
-void listen_for_connections(int sockfd, int port) {
+
+void listen_for_connections(int sockfd) {
   if (listen(sockfd, 3) == -1) {
     perror("listen");
     close(sockfd);
@@ -98,37 +99,50 @@ int accept_connection(int sockfd) {
     close(sockfd);
     exit(EXIT_FAILURE);
   }
-
-  // printf(":%d\n", ntohs(client_addr.sin_port));
-
+  
   return client_socket;
 }
 
-void handle_client(int client_socket) {
-  char buffer[MAX_BUFFER_SIZE] = {0};
+void handle_client(int client_socket, int sockfd) {
+  char buffer[MAX_BUFFER_SIZE];
+  
+	while (1) {
+	// store bytes read
+    ssize_t recv_val = recv(client_socket, buffer, MAX_BUFFER_SIZE - 1, 0);
+    // error handling
+    if (recv_val  <= 0) {
+      perror("recv");
+      close(client_socket);
+      exit(EXIT_FAILURE);
+    }
+    // print message and send response
+    const char *responseString;
+    if (strcmp(buffer, "PING")) {
+    	responseString = "PONG\n";
+    
+    } else if (strcmp(buffer, "ping")) {
+    	responseString = "pong\n";
+    	
+    } else {
+      perror("INVALID");
+      exit(EXIT_FAILURE);
+    }
+    ssize_t response = send(client_socket, responseString, strlen(responseString), 0);
+    // error handling
+    if (response < 0) {
+      perror("send");
+      close(client_socket);
+      exit(EXIT_FAILURE);
+    }
 
-  // Receive data from the client
-  ssize_t recv_val = recv(client_socket, buffer, MAX_BUFFER_SIZE, 0);
-  if (recv_val < 0) {
-    perror("recv");
-    close(client_socket);
-    exit(EXIT_FAILURE);
+     close(client_socket); 
+
   }
 
-  // Send a response (PONG for any message)
-  const char *response = "PONG\n";
-  ssize_t send_val = send(client_socket, response, strlen(response), 0);
-  if (send_val < 0) {
-    perror("send");
-    close(client_socket);
-    exit(EXIT_FAILURE);
-  }
-
-  // Close the connection
-  close(client_socket);
 }
 
 void print_ipv4_address(struct sockaddr_in *addr) {
   unsigned char *ip_bytes = (unsigned char *)&(addr->sin_addr.s_addr);
   printf("%u.%u.%u.%u", ip_bytes[0], ip_bytes[1], ip_bytes[2], ip_bytes[3]);
 }
+
