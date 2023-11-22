@@ -104,41 +104,27 @@ int accept_connection(int sockfd) {
 }
 
 void handle_client(int client_socket, int sockfd) {
-  char buffer[MAX_BUFFER_SIZE];
+  char buffer[MAX_BUFFER_SIZE] = {0};
   
-	while (1) {
-	// store bytes read
-    ssize_t recv_val = recv(client_socket, buffer, MAX_BUFFER_SIZE - 1, 0);
-    // error handling
-    if (recv_val  <= 0) {
+    // Receive data from the client
+    ssize_t recv_val = recv(client_socket, buffer, MAX_BUFFER_SIZE, 0);
+    if (recv_val < 0) {
       perror("recv");
       close(client_socket);
       exit(EXIT_FAILURE);
     }
-    // print message and send response
-    const char *responseString;
-    if (strcmp(buffer, "PING")) {
-    	responseString = "PONG\n";
-    
-    } else if (strcmp(buffer, "ping")) {
-    	responseString = "pong\n";
-    	
-    } else {
-      perror("INVALID");
-      exit(EXIT_FAILURE);
-    }
-    ssize_t response = send(client_socket, responseString, strlen(responseString), 0);
-    // error handling
-    if (response < 0) {
+  
+    // Send a response (PONG for any message)
+    const char *response = "PONG\n";
+    ssize_t send_val = send(client_socket, response, strlen(response), 0);
+    if (send_val < 0) {
       perror("send");
       close(client_socket);
       exit(EXIT_FAILURE);
     }
-
-     close(client_socket); 
-
-  }
-
+  
+    // Close the connection
+    close(client_socket);
 }
 
 void print_ipv4_address(struct sockaddr_in *addr) {
